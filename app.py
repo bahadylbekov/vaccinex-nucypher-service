@@ -36,5 +36,15 @@ def grant_access():
 	policy_info = nucypher.grant(request.json["username"], request.json["password"], request.json["account"], request.json["bob_username"], request.json["filename"])
 	return jsonify(policy_info=policy_info)
 
+@app.route('/decrypt', methods=["POST"])
+def download_and_decrypt_data():
+	decrypted_data = nucypher.downloadFile(request.json["username"], request.json["receipt"], request.json["policy_info"])
+	return jsonify(decrypted_data=decrypted_data)
+
+@app.route('/public_keys', methods=["POST"])
+def get_public_keys():
+	enc_pubkey, sig_pubkey = nucypher.reveal_public_keys(request.json["username"], True)
+	return jsonify(enc_pubkey=enc_pubkey, sig_pubkey=sig_pubkey)
+
 if __name__ == '__main__':
 	app.run(host="0.0.0.0")

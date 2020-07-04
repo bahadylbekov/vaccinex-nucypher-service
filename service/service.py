@@ -112,6 +112,7 @@ class service(object):
         
         enc_pubkey = UmbralPublicKey.from_bytes(bytes.fromhex(data["enc"]))
         sig_pubkey = UmbralPublicKey.from_bytes(bytes.fromhex(data["sig"]))
+        print(sig_pubkey.to_bytes())
 
         if serialized:
             return (
@@ -203,7 +204,7 @@ class service(object):
 
         policy_info = {
             "policy_pubkey" : policy.public_key.to_bytes().hex(),
-            "alice_sig_pubkey" : base58.b58encode(alices_pubkey).decode("utf-8"),
+            "alice_sig_pubkey": base58.b58encode(alices_pubkey).decode("utf-8"),
             "label" : label.decode("utf-8")
         }
 
@@ -215,11 +216,10 @@ class service(object):
         receipt = self.uploadData(filename)
 
         return policy_info, receipt
-        
-    
-    def downloadFile(self, filename, username, receipt, policy_info):
+            
+    def downloadFile(self, username, receipt, policy_info):
         hash = receipt['hash_key']
-        input = self.ipfs.cat(hash)
+        input = self.ipfs_gateway_api.cat(hash)
 
         enc_privkey, sig_privkey = self.reveal_private_keys(username)
 
@@ -229,33 +229,36 @@ class service(object):
         sig_power = SigningPower(keypair=bob_sig_keyp)
         power_ups = [enc_power, sig_power]
 
-        authorizedRecipient = Bob(
+        self.Bob = Bob(
             federated_only=True,
             crypto_power_ups=power_ups,
             start_learning_now=True,
             abort_on_learning_error=True,
-            known_nodes=[self.ursula, self.ursula2, self.ursula3], 
+            known_nodes=[self.ursula], 
             save_metadata=False,
             network_middleware=RestMiddleware(),
         )
 
         policy_pubkey = UmbralPublicKey.from_bytes(bytes.fromhex(policy_info["policy_pubkey"]))
 
-        enrico_as_understood = Enrico.from_public_keys(
+        enrico = Enrico.from_public_keys(
             {SigningPower: UmbralPublicKey.from_bytes(bytes.fromhex(receipt['data_source_public_key']))},
             policy_encrypting_key=policy_pubkey
         )
-        alice_pubkey_restored = UmbralPublicKey.from_bytes((policy_info['alice_sig_pubkey']))
-        authorizedRecipient.join_policy(policy_info['label'].encode(), alice_pubkey_restored)
-        
-        kit = UmbralMessageKit.from_bytes(input)
+        alice_pubkey_restored = UmbralPublicKey.from_bytes(base58.b58decode(policy_info['alice_sig_pubkey']))
+        self.Bob.join_policy(policy_info['label'].encode(), alice_pubkey_restored)
 
-        delivered_cleartexts = authorizedRecipient.retrieve(message_kit=kit,
-                                        data_source=enrico_as_understood,
-                                        alice_verifying_key=alice_pubkey_restored,
-                                        label=(policy_info['label'].encode()))
+        data = msgpack.loads(input, raw=False)
+        message_kits = (UmbralMessageKit.from_bytes(k) for k in data['kits'])
+        message_kit = next(message_kits)
 
-        data = base64.b64decode(delivered_cleartexts[0])
-        output = open('./'+ filename, 'wb')
-        output.write(data)
-        output.close()
+        retrieved_plaintexts = self.Bob.retrieve(
+            message_kit,
+            enrico=enrico,
+            alice_verifying_key=alice_pubkey_restored,
+            label=policy_info['label'].encode(),
+        )
+
+        plaintext = msgpack.loads(retrieved_plaintexts[0], raw=False)
+        decrypted_data = plaintext['data']
+        return decrypted_data
