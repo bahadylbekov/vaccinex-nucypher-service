@@ -44,6 +44,10 @@ def grant_access():
 
 @app.route('/decrypt', methods=["POST"])
 def download_and_decrypt_data():
+	label = request.json["policy_info"]["label"]
+	parsed_label = label.split(".")
+	format = parsed_label[-1]
+	print(format)
 	decrypted_data = nucypher.downloadFile(request.json["username"], request.json["receipt"], request.json["policy_info"])
 	if (decrypted_data is None):
 		return jsonify({"Status": "Decription failed"})
@@ -51,7 +55,7 @@ def download_and_decrypt_data():
 		file = io.BytesIO()
 		file.write(decrypted_data)
 		file.seek(0)
-		return send_file(file, attachment_filename=f"example.txt", as_attachment=True)
+		return send_file(file, attachment_filename=f"example."+format, as_attachment=True)
 
 
 @app.route('/public_keys', methods=["POST"])
