@@ -92,7 +92,12 @@ class service(object):
         with open(path + self.public_key_path, 'w') as f:
             json.dump(public_keys, f)
 
-        return self.Alice
+        config_path = path + '/alice.json'
+        with open(config_path) as config_file:    
+            data = json.load(config_file)
+        address = data["checksum_address"]
+
+        return address
     
     def generate_policy(self, username, label):
         policy_end_datetime = maya.now() + datetime.timedelta(365)
@@ -140,16 +145,15 @@ class service(object):
 
         return enc_privkey, sig_privkey
 
-    def uploadData(self, filename):
+    def uploadData(self, label, file):
 
-        policy_pubkey = self.Alice.get_policy_encrypting_key_from_label(filename.encode("utf-8"))
+        policy_pubkey = self.Alice.get_policy_encrypting_key_from_label(label.encode("utf-8"))
 
         data_source = Enrico(policy_encrypting_key=policy_pubkey)
         data_source_public_key = bytes(data_source.stamp)
 
         now = time.time()
         kits = list()
-        file = open(filename, "r").read()
         now += 5
         data_representation = { 'data': file, 'timestamp': now, }
         plaintext = msgpack.dumps(data_representation, use_bin_type=True)
@@ -167,7 +171,6 @@ class service(object):
             "hash_key" : ipfs_hash
         }
         return receipt
-
 
     def alice_from_configutation(self, username, password, account):
         path = self.user_path + username + '/'
@@ -189,31 +192,31 @@ class service(object):
         return self.Alice
 
 
-    def grant(self, username, password, account, bob_username, filename):
+    def grant(self, username, password, account, bob_username, label):
         self.Alice = self.alice_from_configutation(username, password, account)
 
         powers_and_material = self.calculate_powers(bob_username)
         bob = Bob.from_public_keys(powers_and_material=powers_and_material, federated_only=True)
         
         policy_end_datetime = maya.now() + datetime.timedelta(days=365)
-        label = filename.encode("utf-8")
+        encoded_label = label.encode("utf-8")
 
         self.Alice.start_learning_loop(now=True)
-        policy = self.Alice.grant(bob, label, m=1, n=1, expiration=policy_end_datetime)
+        policy = self.Alice.grant(bob, encoded_label, m=1, n=1, expiration=policy_end_datetime)
         alices_pubkey = bytes(self.Alice.stamp)
 
         policy_info = {
             "policy_pubkey" : policy.public_key.to_bytes().hex(),
             "alice_sig_pubkey": base58.b58encode(alices_pubkey).decode("utf-8"),
-            "label" : label.decode("utf-8")
+            "label" : encoded_label.decode("utf-8")
         }
 
         return policy_info
 
 
-    def add_data_and_grant_self_access(self, username, password, account, filename):
-        policy_info = self.grant(username, password, account, username, filename)
-        receipt = self.uploadData(filename)
+    def add_data_and_grant_self_access(self, username, password, account, label, file):
+        policy_info = self.grant(username, password, account, username, label)
+        receipt = self.uploadData(label, file)
 
         return policy_info, receipt
             
@@ -260,5 +263,6 @@ class service(object):
         )
 
         plaintext = msgpack.loads(retrieved_plaintexts[0], raw=False)
+        print(plaintext)
         decrypted_data = plaintext['data']
         return decrypted_data

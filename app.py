@@ -5,6 +5,8 @@ from umbral.keys import UmbralPrivateKey, UmbralPublicKey
 from flask import Flask, request, send_from_directory, jsonify, request
 from flask_cors import CORS
 from flask_api import status
+import io
+from flask.helpers import send_file
 
 sys.path.append("..")
 
@@ -22,24 +24,35 @@ nucypher.connect(ursula_uri, ursula_uri2, ursula_uri3, ipfs_address)
 
 @app.route('/user', methods=["POST"])
 def create_user():
-	nucypher.create_alice(request.json["username"], request.json["password"])
-	return jsonify({'status': status.HTTP_201_CREATED})
+	address = nucypher.create_alice(request.json["username"], request.json["password"])
+	return jsonify(address=address)
 
-@app.route('/data', methods=["POST"])
+@app.route('/encrypt', methods=["POST"])
 def add_data():
-	policy_info, receipt = nucypher.add_data_and_grant_self_access(request.json["username"], request.json["password"], request.json["account"], request.json["filename"])
+
+	if len(request.files) > 0:
+		data = request.files['file'].read()
+
+	policy_info, receipt = nucypher.add_data_and_grant_self_access(request.form["username"], request.form["password"], request.form["account"], request.form["label"], data)
 	
 	return jsonify(policy_info=policy_info, receipt=receipt)
 
 @app.route('/grant', methods=["POST"])
 def grant_access():
-	policy_info = nucypher.grant(request.json["username"], request.json["password"], request.json["account"], request.json["bob_username"], request.json["filename"])
+	policy_info = nucypher.grant(request.json["username"], request.json["password"], request.json["account"], request.json["bob_username"], request.json["label"])
 	return jsonify(policy_info=policy_info)
 
 @app.route('/decrypt', methods=["POST"])
 def download_and_decrypt_data():
 	decrypted_data = nucypher.downloadFile(request.json["username"], request.json["receipt"], request.json["policy_info"])
-	return jsonify(decrypted_data=decrypted_data)
+	if (decrypted_data is None):
+		return jsonify({"Status": "Decription failed"})
+	else:
+		file = io.BytesIO()
+		file.write(decrypted_data)
+		file.seek(0)
+		return send_file(file, attachment_filename=f"example.txt", as_attachment=True)
+
 
 @app.route('/public_keys', methods=["POST"])
 def get_public_keys():
